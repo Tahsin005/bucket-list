@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node.js Event Loop — Interactive Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-2: #14161c;
+    --bg-3: #1a1d26;
+    --panel: #15171f;
+    --line: #262a36;
+    --line-2: #2f3442;
+    --ink: #e7e9ee;
+    --ink-2: #aeb3c0;
+    --ink-3: #6b7185;
+    --accent: #ffb84d;       /* warm amber – pop color */
+    --accent-2: #f97a3d;
+    --green: #8ce99a;
+    --blue: #74c0fc;
+    --purple: #d0bfff;
+    --pink: #ffa8d4;
+    --red: #ff8787;
+    --teal: #66d9d4;
+    --yellow: #ffd866;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 1200px 600px at 20% -10%, rgba(255,184,77,0.06), transparent 60%),
+      radial-gradient(ellipse 800px 500px at 90% 110%, rgba(116,192,252,0.05), transparent 60%),
+      var(--bg);
+    padding: 24px;
+  }
+
+  /* Header */
+  .hdr {
+    max-width: 1700px; margin: 0 auto 20px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding-bottom: 18px; border-bottom: 1px solid var(--line);
+  }
+  .hdr h1 {
+    margin: 0; font-family: 'Fraunces', serif; font-weight: 800;
+    font-size: 38px; letter-spacing: -0.02em; line-height: 1;
+  }
+  .hdr h1 .accent { color: var(--accent); font-style: italic; }
+  .hdr .sub { color: var(--ink-3); font-size: 13px; margin-top: 6px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.02em; }
+  .hdr .right { text-align: right; color: var(--ink-3); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .hdr .right .label { color: var(--ink-2); }
+
+  /* Main grid */
+  .app {
+    max-width: 1700px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: 420px 1fr 380px;
+    gap: 18px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .panel-hdr {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-hdr .tag { color: var(--accent); }
+
+  /* LEFT: example list + code */
+  .left { display: flex; flex-direction: column; gap: 18px; }
+
+  .examples {
+    max-height: 320px;
+  }
+  .examples-list {
+    overflow-y: auto;
+    padding: 6px;
+  }
+  .ex {
+    padding: 10px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    border: 1px solid transparent;
+    margin-bottom: 2px;
+    transition: background 0.15s, border 0.15s;
+  }
+  .ex:hover { background: var(--bg-3); }
+  .ex.active {
+    background: var(--bg-3);
+    border-color: var(--accent);
+  }
+  .ex .num {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ink-3);
+    font-size: 10px;
+    margin-right: 8px;
+  }
+  .ex.active .num { color: var(--accent); }
+  .ex .desc {
+    color: var(--ink-3); font-size: 11px; margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  .code-wrap { flex: 1; min-height: 0; }
+  .code {
+    padding: 16px 16px 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-y: auto;
+    max-height: 100%;
+    white-space: pre;
+  }
+  .code .ln {
+    display: block; padding: 1px 8px;
+    border-left: 2px solid transparent;
+    margin-left: 0;
+    padding-left: 14px;
+    transition: background 0.2s, border-color 0.2s;
+    position: relative;
+  }
+  .code .ln .lnum {
+    display: inline-block;
+    width: 28px;
+    color: var(--ink-3);
+    text-align: right;
+    margin-right: 12px;
+    user-select: none;
+    font-size: 11px;
+    opacity: 0.6;
+  }
+  .code .ln.exec .lnum {
+    color: var(--accent);
+    opacity: 1;
+    font-weight: 700;
+  }
+  .code .ln.exec {
+    background: rgba(255, 184, 77, 0.12);
+    border-left-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(255,184,77,0.15);
+  }
+  /* Gutter arrow indicator for the currently executing line */
+  .code .ln.exec::before {
+    content: '▶';
+    position: absolute;
+    left: 2px;
+    color: var(--accent);
+    font-size: 9px;
+    animation: arrow-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes arrow-pulse {
+    0%, 100% { opacity: 1; transform: translateX(0); }
+    50% { opacity: 0.5; transform: translateX(2px); }
+  }
+  .code .ln.executed { opacity: 0.55; }
+  .code .ln.scheduled-tick { border-left-color: var(--pink); background: rgba(255,168,212,0.06); }
+  .code .ln.scheduled-promise { border-left-color: var(--purple); background: rgba(208,191,255,0.06); }
+  .code .ln.scheduled-timer { border-left-color: var(--blue); background: rgba(116,192,252,0.06); }
+  .code .ln.scheduled-immediate { border-left-color: var(--green); background: rgba(140,233,154,0.06); }
+  .code .ln.scheduled-io { border-left-color: var(--teal); background: rgba(102,217,212,0.06); }
+
+  /* Syntax tokens */
+  .k { color: var(--pink); }   /* keyword */
+  .s { color: var(--green); }  /* string */
+  .n { color: var(--yellow); } /* number */
+  .c { color: var(--ink-3); font-style: italic; } /* comment */
+  .fn { color: var(--blue); }  /* function */
+  .id { color: var(--ink); }
+  .op { color: var(--ink-2); }
+
+  /* CENTER: event loop diagram */
+  .center { display: flex; flex-direction: column; gap: 18px; }
+  .stage {
+    flex: 1;
+    min-height: 580px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .stage svg { width: 100%; height: 100%; max-height: 600px; }
+
+  /* Microtask boxes between phases */
+  .micro-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    padding: 14px;
+    background: var(--bg-2);
+    border-top: 1px solid var(--line);
+  }
+  .micro {
+    background: var(--bg-3);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    padding: 10px 12px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .micro.active {
+    background: rgba(255,184,77,0.06);
+    border-color: var(--accent);
+  }
+  .micro .h {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .micro .h .name { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.04em; }
+  .micro .h .name.tick { color: var(--pink); }
+  .micro .h .name.promise { color: var(--purple); }
+  .micro .h .count { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-3); }
+  .micro .items { min-height: 26px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .item {
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    padding: 3px 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-2);
+    animation: pop-in 0.3s ease-out;
+  }
+  .item.tick { border-color: rgba(255,168,212,0.4); color: var(--pink); }
+  .item.promise { border-color: rgba(208,191,255,0.4); color: var(--purple); }
+  .item.timer { border-color: rgba(116,192,252,0.4); color: var(--blue); }
+  .item.immediate { border-color: rgba(140,233,154,0.4); color: var(--green); }
+  .item.io { border-color: rgba(102,217,212,0.4); color: var(--teal); }
+  .item.close { border-color: rgba(255,135,135,0.4); color: var(--red); }
+  @keyframes pop-in {
+    0% { transform: scale(0.6); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .item.draining { animation: drain 0.4s forwards; }
+  @keyframes drain {
+    100% { transform: translateX(40px) scale(0.7); opacity: 0; }
+  }
+
+  /* RIGHT: controls + console */
+  .right-col { display: flex; flex-direction: column; gap: 18px; }
+
+  .controls { padding: 16px; }
+  .step-info {
+    background: var(--bg-3);
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    min-height: 80px;
+    border-radius: 0 4px 4px 0;
+  }
+  .step-info .label {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-size: 10px;
+    margin-bottom: 6px;
+  }
+  .step-info .phase-label {
+    color: var(--ink);
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .step-info .detail {
+    color: var(--ink-2);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+  }
+
+  /* Line indicator inside the Current Step card */
+  .line-indicator {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line-2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .line-pill {
+    background: var(--accent);
+    color: #1a1100;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .line-pill.scheduled {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .line-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink);
+    background: var(--bg);
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--line-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  button {
+    background: var(--bg-3);
+    border: 1px solid var(--line-2);
+    color: var(--ink);
+    padding: 9px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--bg-2); border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent); color: #1a1100; border-color: var(--accent);
+    font-weight: 700;
+  }
+  button.primary:hover:not(:disabled) { background: #ffc873; color: #1a1100; }
+
+  .step-meta {
+    display: flex; justify-content: space-between;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .step-meta b { color: var(--ink); font-weight: 500; }
+
+  .speed-wrap {
+    margin-top: 12px;
+    display: flex; align-items: center; gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .speed-wrap input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+  .console-panel { flex: 1; min-height: 0; }
+  .console {
+    flex: 1;
+    background: var(--bg);
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-y: auto;
+    min-height: 200px;
+    max-height: 480px;
+  }
+  .console .out {
+    color: var(--ink);
+    animation: line-in 0.3s ease-out;
+  }
+  .console .out .ord {
+    color: var(--ink-3);
+    margin-right: 10px;
+    user-select: none;
+  }
+  .console .out .src {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin-right: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .console .out .src.sync { background: rgba(231,233,238,0.1); color: var(--ink-2); }
+  .console .out .src.tick { background: rgba(255,168,212,0.15); color: var(--pink); }
+  .console .out .src.promise { background: rgba(208,191,255,0.15); color: var(--purple); }
+  .console .out .src.timer { background: rgba(116,192,252,0.15); color: var(--blue); }
+  .console .out .src.immediate { background: rgba(140,233,154,0.15); color: var(--green); }
+  .console .out .src.io { background: rgba(102,217,212,0.15); color: var(--teal); }
+  .console .out .src.close { background: rgba(255,135,135,0.15); color: var(--red); }
+  @keyframes line-in {
+    0% { transform: translateX(-6px); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+  }
+
+  /* SVG phase styling */
+  .phase-circle {
+    fill: var(--bg-2);
+    stroke: var(--line-2);
+    stroke-width: 1.5;
+    transition: fill 0.3s, stroke 0.3s, stroke-width 0.3s;
+  }
+  .phase-circle.active {
+    fill: rgba(255,184,77,0.12);
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+  .phase-label {
+    fill: var(--ink-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    text-anchor: middle;
+    transition: fill 0.3s;
+    pointer-events: none;
+  }
+  .phase-label.active { fill: var(--accent); }
+  .phase-count {
+    fill: var(--ink-3);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+  .phase-count.has { fill: var(--accent); font-weight: 700; }
+  .phase-arrow {
+    stroke: var(--line-2);
+    stroke-width: 1.5;
+    fill: none;
+    marker-end: url(#arrow);
+  }
+  .center-label {
+    fill: var(--ink-3);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    text-anchor: middle;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+    background: var(--bg-2);
+    border-top: 1px solid var(--line);
+  }
+  .legend .li { display: flex; align-items: center; gap: 5px; }
+  .legend .sw {
+    width: 10px; height: 10px; border-radius: 2px;
+    display: inline-block;
+  }
+
+  /* Phase transition popup toasts (top-center, stacked) */
+  .toast-stack {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+    align-items: center;
+  }
+  .toast {
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+    padding: 12px 18px 12px 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,184,77,0.1);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    min-width: 320px;
+    max-width: 520px;
+    animation: toast-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+    backdrop-filter: blur(8px);
+  }
+  .toast.leaving { animation: toast-out 0.3s forwards; }
+  .toast .ttl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .toast .ico {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .toast .dtl {
+    color: var(--ink-2);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 4px;
+  }
+  /* Toast variants by phase color */
+  .toast.t-enter { border-left-color: var(--accent); }
+  .toast.t-enter .ttl { color: var(--accent); }
+  .toast.t-exit { border-left-color: var(--ink-3); }
+  .toast.t-exit .ttl { color: var(--ink-2); }
+  .toast.t-tick { border-left-color: var(--pink); }
+  .toast.t-tick .ttl { color: var(--pink); }
+  .toast.t-promise { border-left-color: var(--purple); }
+  .toast.t-promise .ttl { color: var(--purple); }
+  .toast.t-done { border-left-color: var(--green); }
+  .toast.t-done .ttl { color: var(--green); }
+  .toast.t-warn { border-left-color: var(--red); }
+  .toast.t-warn .ttl { color: var(--red); }
+
+  @keyframes toast-in {
+    0% { transform: translateY(-20px) scale(0.94); opacity: 0; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+  @keyframes toast-out {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-12px) scale(0.96); opacity: 0; }
+  }
+
+  /* "Run All" prominent button */
+  .run-all-row {
+    display: flex; gap: 8px; align-items: center;
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line-2);
+  }
+  button.run-all {
+    flex: 1;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    color: #1a1100;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 11px 8px;
+    font-size: 12px;
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+  button.run-all:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ffc873 0%, #ff9356 100%);
+    color: #1a1100;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(255,184,77,0.3);
+  }
+  button.run-all.running {
+    background: var(--bg-3);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  button.run-all.running:hover {
+    background: var(--bg-2);
+    color: var(--accent);
+  }
+  .run-all .pulse {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    margin-right: 6px;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* Toast toggle in controls */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+  }
+  .toggle input {
+    -webkit-appearance: none; appearance: none;
+    width: 28px; height: 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--line-2);
+    border-radius: 7px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle input:checked { background: var(--accent); border-color: var(--accent); }
+  .toggle input::before {
+    content: '';
+    position: absolute;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--ink-2);
+    top: 1px; left: 1px;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle input:checked::before {
+    transform: translateX(14px);
+    background: #1a1100;
+  }
+
+  /* Notes area */
+  .notes {
+    padding: 14px 16px;
+    background: var(--bg-2);
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-2);
+    line-height: 1.6;
+    font-family: 'Inter', sans-serif;
+  }
+  .notes b { color: var(--accent); font-weight: 600; }
+  .notes code {
+    background: var(--bg-3); padding: 1px 6px; border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--accent);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+  /* Responsive */
+  @media (max-width: 1400px) {
+    .app { grid-template-columns: 360px 1fr 340px; }
+  }
+  @media (max-width: 1200px) {
+    .app { grid-template-columns: 1fr; }
+    .stage { min-height: 480px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <h1>The Node.js <span class="accent">Event Loop</span></h1>
+    <div class="sub">interactive classroom visualizer · timers · poll · check · nextTick · microtasks</div>
+  </div>
+  <div class="right">
+    <div><span class="label">based on</span> nodejs.org/learn</div>
+    <div><span class="label">step through</span> 8 worked examples</div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- LEFT COLUMN -->
+  <div class="left">
+    <div class="panel examples">
+      <div class="panel-hdr">
+        <span>Examples</span>
+        <span class="tag" id="exCount">8 scenarios</span>
+      </div>
+      <div class="examples-list" id="examplesList"></div>
+    </div>
+
+    <div class="panel" style="flex: 1; min-height: 400px;">
+      <div class="panel-hdr">
+        <span>Source</span>
+        <span class="tag" id="sourceTitle">example.js</span>
+      </div>
+      <div class="code-wrap">
+        <div class="code" id="code"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER COLUMN -->
+  <div class="center">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span>Event Loop</span>
+        <span class="tag" id="loopIter">iteration 0</span>
+      </div>
+      <div class="stage">
+        <svg viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f3442"/>
+            </marker>
+            <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffb84d"/>
+            </marker>
+          </defs>
+
+          <!-- Center label -->
+          <text x="300" y="290" class="center-label" font-size="13">one tick of</text>
+          <text x="300" y="312" class="center-label" font-size="22" font-weight="600">the event loop</text>
+          <text x="300" y="335" class="center-label" font-size="11">FIFO per phase</text>
+
+          <!-- Phase circles arranged in a hexagonal cycle -->
+          <!-- 6 phases positioned around the center -->
+          <!-- Each phase: circle + label + count + queue items -->
+
+          <!-- TIMERS - top -->
+          <g id="phase-timers" transform="translate(300, 90)">
+            <circle class="phase-circle" cx="0" cy="0" r="55"/>
+            <text class="phase-label" x="0" y="-8">TIMERS</text>
+            <text class="phase-label" x="0" y="8" font-size="9" fill="var(--ink-3)">setTimeout</text>
+            <text class="phase-label" x="0" y="20" font-size="9" fill="var(--ink-3)">setInterval</text>
+            <text class="phase-count" x="0" y="38" id="count-timers">0 queued</text>
+          </g>
+
+          <!-- PENDING - top right -->
+          <g id="phase-pending" transform="translate(490, 200)">
+            <circle class="phase-circle" cx="0" cy="0" r="55"/>
+            <text class="phase-label" x="0" y="-4">PENDING</text>
+            <text class="phase-label" x="0" y="10" font-size="9" fill="var(--ink-3)">deferred I/O</text>
+            <text class="phase-label" x="0" y="22" font-size="9" fill="var(--ink-3)">callbacks</text>
+            <text class="phase-count" x="0" y="40" id="count-pending">0 queued</text>
+          </g>
+
+          <!-- POLL - bottom right -->
+          <g id="phase-poll" transform="translate(490, 400)">
+            <circle class="phase-circle" cx="0" cy="0" r="55"/>
+            <text class="phase-label" x="0" y="-4">POLL</text>
+            <text class="phase-label" x="0" y="10" font-size="9" fill="var(--ink-3)">I/O callbacks</text>
+            <text class="phase-label" x="0" y="22" font-size="9" fill="var(--ink-3)">(fs, net, ...)</text>
+            <text class="phase-count" x="0" y="40" id="count-poll">0 queued</text>
+          </g>
+
+          <!-- CHECK - bottom -->
+          <g id="phase-check" transform="translate(300, 510)">
+            <circle class="phase-circle" cx="0" cy="0" r="55"/>
+            <text class="phase-label" x="0" y="-4">CHECK</text>
+            <text class="phase-label" x="0" y="10" font-size="9" fill="var(--ink-3)">setImmediate</text>
+            <text class="phase-count" x="0" y="38" id="count-check">0 queued</text>
+          </g>
+
+          <!-- CLOSE - bottom left -->
+          <g id="phase-close" transform="translate(110, 400)">
+            <circle class="phase-circle" cx="0" cy="0" r="55"/>
+            <text class="phase-label" x="0" y="-4">CLOSE</text>
+            <text class="phase-label" x="0" y="10" font-size="9" fill="var(--ink-3)">close events</text>
+            <text class="phase-label" x="0" y="22" font-size="9" fill="var(--ink-3)">on('close')</text>
+            <text class="phase-count" x="0" y="40" id="count-close">0 queued</text>
+          </g>
+
+          <!-- IDLE/PREP - top left (decorative, dimmer) -->
+          <g id="phase-idle" transform="translate(110, 200)" opacity="0.4">
+            <circle class="phase-circle" cx="0" cy="0" r="55" stroke-dasharray="3 3"/>
+            <text class="phase-label" x="0" y="-4">IDLE</text>
+            <text class="phase-label" x="0" y="10" font-size="9" fill="var(--ink-3)">internal</text>
+            <text class="phase-label" x="0" y="22" font-size="9" fill="var(--ink-3)">only</text>
+          </g>
+
+          <!-- Arrows between phases - clockwise cycle -->
+          <!-- timers -> pending -->
+          <path class="phase-arrow" d="M 350 110 Q 430 130 455 165" />
+          <!-- pending -> idle -->
+          <path class="phase-arrow" d="M 440 215 Q 280 230 160 215" />
+          <!-- idle -> poll -->
+          <path class="phase-arrow" d="M 145 250 Q 180 320 250 380" stroke-dasharray="3 3" opacity="0.5"/>
+          <!-- Direct pending->poll arrow (the real flow) -->
+          <path class="phase-arrow" d="M 490 255 L 490 345" />
+          <!-- poll -> check -->
+          <path class="phase-arrow" d="M 445 435 Q 380 490 350 495" />
+          <!-- check -> close -->
+          <path class="phase-arrow" d="M 250 495 Q 180 470 145 440" />
+          <!-- close -> timers (back to start) -->
+          <path class="phase-arrow" d="M 110 345 Q 90 200 250 110" stroke-width="2"/>
+
+          <!-- Queue items will be appended dynamically near each phase -->
+          <g id="queue-timers"></g>
+          <g id="queue-pending"></g>
+          <g id="queue-poll"></g>
+          <g id="queue-check"></g>
+          <g id="queue-close"></g>
+        </svg>
+      </div>
+
+      <!-- Microtask row -->
+      <div class="micro-row">
+        <div class="micro" id="micro-tick">
+          <div class="h">
+            <span class="name tick">▸ process.nextTick queue</span>
+            <span class="count" id="tick-count">empty</span>
+          </div>
+          <div class="items" id="tick-items"></div>
+        </div>
+        <div class="micro" id="micro-promise">
+          <div class="h">
+            <span class="name promise">▸ Promise microtask queue</span>
+            <span class="count" id="promise-count">empty</span>
+          </div>
+          <div class="items" id="promise-items"></div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <div class="li"><span class="sw" style="background:var(--ink-2)"></span>sync</div>
+        <div class="li"><span class="sw" style="background:var(--pink)"></span>nextTick</div>
+        <div class="li"><span class="sw" style="background:var(--purple)"></span>Promise.then</div>
+        <div class="li"><span class="sw" style="background:var(--blue)"></span>setTimeout / setInterval</div>
+        <div class="li"><span class="sw" style="background:var(--green)"></span>setImmediate</div>
+        <div class="li"><span class="sw" style="background:var(--teal)"></span>I/O callback</div>
+        <div class="li"><span class="sw" style="background:var(--red)"></span>close</div>
+      </div>
+
+      <div class="notes" id="notes"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="right-col">
+    <div class="panel controls">
+      <div class="step-info">
+        <div class="label">Current step</div>
+        <div class="phase-label" id="phaseTitle">Ready</div>
+        <div class="detail" id="phaseDetail">Pick an example and press Step to begin.</div>
+        <div class="line-indicator" id="lineIndicator" style="display:none;">
+          <span class="line-pill" id="linePill">line —</span>
+          <span class="line-code" id="lineCode"></span>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="btnPrev" disabled>◂ Prev</button>
+        <button id="btnStep" class="primary">Step ▸</button>
+        <button id="btnReset">Reset</button>
+      </div>
+
+      <div class="step-meta">
+        <span>step <b id="stepNum">0</b> / <b id="stepTotal">0</b></span>
+        <span>output lines <b id="outCount">0</b></span>
+      </div>
+
+      <div class="speed-wrap">
+        <span>auto</span>
+        <input type="range" id="speed" min="0" max="100" value="50">
+        <span><span id="speedLabel">medium</span></span>
+        <button id="btnPlay" style="padding: 5px 10px; font-size: 10px;">▶</button>
+      </div>
+
+      <div class="run-all-row">
+        <button id="btnRunAll" class="run-all">▶▶  RUN ALL</button>
+      </div>
+
+      <div class="toggle-row">
+        <span>phase popups</span>
+        <label class="toggle">
+          <input type="checkbox" id="toastToggle" checked>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel console-panel">
+      <div class="panel-hdr">
+        <span>Console output</span>
+        <span class="tag">stdout</span>
+      </div>
+      <div class="console" id="console">
+        <div style="color: var(--ink-3); font-style: italic;">// console.log() output will appear here in execution order</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Phase transition popup stack -->
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================================
+// EXAMPLES
+// ============================================================================
+// Each example has:
+//   title, desc, source (with syntax-highlighted HTML), notes (teaching point),
+//   steps (the simulated execution trace)
+// Each step has:
+//   phase: which phase of the loop we're in (or 'sync'|'tick'|'promise')
+//   action: 'enter-phase' | 'exec' | 'schedule' | 'drain-tick' | 'drain-promise' | 'idle-poll' | 'done'
+//   line:   source line being executed (1-indexed) — optional
+//   queue:  for 'schedule' actions, which queue
+//   label:  label for queue item / console entry
+//   log:    string printed to console (optional)
+//   detail: human-readable explanation
+// ============================================================================
+
+const examples = [
+  // ---------- 1. CLASSIC ORDER ----------
+  {
+    title: "1. The classic interview question",
+    desc: "sync, setTimeout(0), setImmediate, nextTick, Promise — what prints first?",
+    source: [
+      `<span class="c">// Main module — outside any I/O cycle</span>`,
+      `<span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'1: sync start'</span>);`,
+      ``,
+      `<span class="fn">setTimeout</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'2: setTimeout 0'</span>), <span class="n">0</span>);`,
+      ``,
+      `<span class="fn">setImmediate</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'3: setImmediate'</span>));`,
+      ``,
+      `<span class="id">process</span>.<span class="fn">nextTick</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'4: nextTick'</span>));`,
+      ``,
+      `<span class="id">Promise</span>.<span class="fn">resolve</span>().<span class="fn">then</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'5: promise'</span>));`,
+      ``,
+      `<span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'6: sync end'</span>);`,
+    ],
+    notes: `<b>Key rule:</b> after the sync script finishes, microtasks drain <b>before</b> the event loop touches any phase. Within microtasks, <code>process.nextTick</code> always beats <code>Promise.then</code>. Then the loop runs — timers phase first.`,
+    steps: [
+      { action: 'exec', line: 2, log: '1: sync start', src: 'sync', detail: 'Synchronous code runs top-to-bottom in the main script.' },
+      { action: 'schedule', queue: 'timer', label: 'cb #2', line: 4, detail: 'setTimeout(cb, 0) schedules into the TIMERS phase. Note: 0ms is clamped to ~1ms internally.' },
+      { action: 'schedule', queue: 'immediate', label: 'cb #3', line: 6, detail: 'setImmediate(cb) schedules into the CHECK phase.' },
+      { action: 'schedule', queue: 'tick', label: 'cb #4', line: 8, detail: 'process.nextTick(cb) goes into the nextTick microtask queue — not part of the loop.' },
+      { action: 'schedule', queue: 'promise', label: 'cb #5', line: 10, detail: 'Promise.then(cb) goes into the Promise microtask queue.' },
+      { action: 'exec', line: 12, log: '6: sync end', src: 'sync', detail: 'Last synchronous statement.' },
+      { action: 'drain-tick', line: 8, label: 'cb #4', log: '4: nextTick', src: 'tick', detail: 'Sync code finished → drain nextTick queue first. process.nextTick always runs before Promises.' },
+      { action: 'drain-promise', line: 10, label: 'cb #5', log: '5: promise', src: 'promise', detail: 'Then drain the Promise microtask queue.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'Now the loop begins. Enter TIMERS phase.' },
+      { action: 'exec-queue', phase: 'timers', line: 4, label: 'cb #2', log: '2: setTimeout 0', src: 'timer', detail: 'setTimeout callback fires.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING CALLBACKS — empty here.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — nothing queued, but setImmediate is scheduled, so don\'t block, move on.' },
+      { action: 'idle-poll', detail: 'Poll queue empty + setImmediate pending → skip directly to CHECK.' },
+      { action: 'enter-phase', phase: 'check', detail: 'CHECK phase.' },
+      { action: 'exec-queue', phase: 'check', line: 6, label: 'cb #3', log: '3: setImmediate', src: 'immediate', detail: 'setImmediate callback runs.' },
+      { action: 'enter-phase', phase: 'close', detail: 'CLOSE — nothing queued.' },
+      { action: 'done', detail: 'Nothing left scheduled → process exits.' },
+    ]
+  },
+
+  // ---------- 2. setImmediate vs setTimeout INSIDE I/O ----------
+  {
+    title: "2. setImmediate vs setTimeout — inside I/O",
+    desc: "Inside an I/O callback, setImmediate ALWAYS beats setTimeout(0).",
+    source: [
+      `<span class="k">const</span> <span class="id">fs</span> <span class="op">=</span> <span class="fn">require</span>(<span class="s">'node:fs'</span>);`,
+      ``,
+      `<span class="id">fs</span>.<span class="fn">readFile</span>(<span class="id">__filename</span>, () <span class="op">=&gt;</span> {`,
+      `  <span class="c">// We are now inside the POLL phase</span>`,
+      `  <span class="fn">setTimeout</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'timeout'</span>), <span class="n">0</span>);`,
+      `  <span class="fn">setImmediate</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'immediate'</span>));`,
+      `});`,
+    ],
+    notes: `<b>Why it's deterministic here:</b> the callback runs in the POLL phase. The very next phase is CHECK (setImmediate). The timers phase only comes back at the start of the NEXT loop iteration. So <code>immediate</code> always wins inside an I/O callback.`,
+    steps: [
+      { action: 'exec', line: 1, src: 'sync', detail: 'Require fs module.' },
+      { action: 'schedule', queue: 'io', label: 'readFile', line: 3, detail: 'fs.readFile dispatches an async I/O request to the thread pool / kernel.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'Loop starts. TIMERS — empty.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING — empty.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — wait for I/O. File read completes, callback is queued.' },
+      { action: 'schedule-io-complete', label: 'readFile cb', detail: 'Kernel signals file read complete → callback added to poll queue.' },
+      { action: 'exec-queue', phase: 'poll', line: 3, label: 'readFile cb', detail: 'Run the readFile callback inside POLL.' },
+      { action: 'schedule', queue: 'timer', label: 'timeout cb', line: 5, detail: 'Inside the I/O callback we schedule setTimeout — queued for TIMERS phase.' },
+      { action: 'schedule', queue: 'immediate', label: 'immediate cb', line: 6, detail: 'And setImmediate — queued for CHECK phase.' },
+      { action: 'enter-phase', phase: 'check', detail: 'POLL done → next is CHECK. setImmediate fires here, BEFORE we ever loop back to timers.' },
+      { action: 'exec-queue', phase: 'check', line: 6, label: 'immediate cb', log: 'immediate', src: 'immediate', detail: 'setImmediate callback runs first.' },
+      { action: 'enter-phase', phase: 'close', detail: 'CLOSE — empty.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'Loop iteration 2 begins. NOW timers runs.', iter: 2 },
+      { action: 'exec-queue', phase: 'timers', line: 5, label: 'timeout cb', log: 'timeout', src: 'timer', detail: 'setTimeout callback runs in the next loop iteration.' },
+      { action: 'done', detail: 'Both fired. Inside I/O, setImmediate always beats setTimeout(0).' },
+    ]
+  },
+
+  // ---------- 3. setImmediate vs setTimeout in MAIN module ----------
+  {
+    title: "3. setImmediate vs setTimeout — main module",
+    desc: "Outside I/O, the order is NON-DETERMINISTIC — depends on process timing.",
+    source: [
+      `<span class="c">// In the main module (not inside any callback)</span>`,
+      `<span class="fn">setTimeout</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'timeout'</span>), <span class="n">0</span>);`,
+      `<span class="fn">setImmediate</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'immediate'</span>));`,
+      ``,
+      `<span class="c">// Output order: NOT GUARANTEED.</span>`,
+      `<span class="c">// Depends on whether ~1ms has elapsed by the</span>`,
+      `<span class="c">// time the loop enters the timers phase.</span>`,
+    ],
+    notes: `<b>The trap:</b> setTimeout(fn, 0) is actually setTimeout(fn, 1) internally. If process startup is slow, ≥1ms has passed → timers phase has a ready callback → 'timeout' first. If startup is fast (&lt;1ms), the timer isn't ready yet → loop skips timers → 'immediate' fires first.`,
+    steps: [
+      { action: 'schedule', queue: 'timer', label: 'timeout cb', line: 2, detail: 'Schedule timer for ~1ms in the future.' },
+      { action: 'schedule', queue: 'immediate', label: 'immediate cb', line: 3, detail: 'Schedule setImmediate.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'Loop starts → TIMERS. Is the 1ms threshold reached yet? Coin flip.' },
+      { action: 'exec-queue', phase: 'timers', line: 2, label: 'timeout cb', log: 'timeout', src: 'timer', detail: '(This run) startup was slow → threshold met → timer fires.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING — empty.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — empty, but setImmediate pending.' },
+      { action: 'idle-poll', detail: 'Skip to CHECK.' },
+      { action: 'enter-phase', phase: 'check', detail: 'CHECK phase.' },
+      { action: 'exec-queue', phase: 'check', line: 3, label: 'immediate cb', log: 'immediate', src: 'immediate', detail: 'setImmediate fires.' },
+      { action: 'done', detail: 'Run again and you may see "immediate" then "timeout". Order is not guaranteed in the main module.' },
+    ]
+  },
+
+  // ---------- 4. nextTick STARVES THE LOOP ----------
+  {
+    title: "4. nextTick can starve I/O",
+    desc: "Recursive nextTick prevents the loop from EVER reaching poll.",
+    source: [
+      `<span class="k">const</span> <span class="id">fs</span> <span class="op">=</span> <span class="fn">require</span>(<span class="s">'node:fs'</span>);`,
+      ``,
+      `<span class="id">fs</span>.<span class="fn">readFile</span>(<span class="id">__filename</span>, () <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'I/O callback — will I run?'</span>);`,
+      `});`,
+      ``,
+      `<span class="k">function</span> <span class="fn">recurse</span>() {`,
+      `  <span class="id">process</span>.<span class="fn">nextTick</span>(<span class="fn">recurse</span>);`,
+      `}`,
+      `<span class="fn">recurse</span>(); <span class="c">// fills nextTick queue forever</span>`,
+    ],
+    notes: `<b>The danger:</b> the nextTick queue is drained <b>between every operation</b>, before the loop can advance. If you keep adding to it, the loop is starved. Your I/O callback never runs. This is what the docs mean by "starve your I/O".`,
+    steps: [
+      { action: 'schedule', queue: 'io', label: 'readFile', line: 3, detail: 'Kick off async file read.' },
+      { action: 'exec', line: 10, src: 'sync', detail: 'Call recurse() for the first time.' },
+      { action: 'schedule', queue: 'tick', label: 'recurse', line: 8, detail: 'Add recurse to nextTick queue.' },
+      { action: 'drain-tick', line: 8, label: 'recurse', src: 'tick', detail: 'Sync done → drain nextTick queue.' },
+      { action: 'schedule', queue: 'tick', label: 'recurse', line: 8, detail: 'But recurse SCHEDULES ANOTHER recurse!' },
+      { action: 'drain-tick', line: 8, label: 'recurse', src: 'tick', detail: 'Drain again...' },
+      { action: 'schedule', queue: 'tick', label: 'recurse', line: 8, detail: '...which schedules another...' },
+      { action: 'drain-tick', line: 8, label: 'recurse', src: 'tick', detail: '...drain...' },
+      { action: 'schedule', queue: 'tick', label: 'recurse', line: 8, detail: '...schedule...' },
+      { action: 'drain-tick', line: 8, label: 'recurse', src: 'tick', detail: '...drain... (this loops forever)' },
+      { action: 'done', detail: '⚠ The loop never advances. The readFile callback in POLL is never reached. "I/O callback — will I run?" never prints. CPU spins at 100%.' },
+    ]
+  },
+
+  // ---------- 5. nextTick vs Promise — within microtasks ----------
+  {
+    title: "5. nextTick vs Promise microtasks",
+    desc: "Inside microtask draining: ALL nextTicks run before ANY Promise callback.",
+    source: [
+      `<span class="id">Promise</span>.<span class="fn">resolve</span>().<span class="fn">then</span>(() <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'promise 1'</span>);`,
+      `  <span class="id">process</span>.<span class="fn">nextTick</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'tick inside promise'</span>));`,
+      `});`,
+      ``,
+      `<span class="id">process</span>.<span class="fn">nextTick</span>(() <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'tick 1'</span>);`,
+      `  <span class="id">Promise</span>.<span class="fn">resolve</span>().<span class="fn">then</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'promise inside tick'</span>));`,
+      `});`,
+      ``,
+      `<span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'sync'</span>);`,
+    ],
+    notes: `<b>The rule:</b> Node drains the entire <code>nextTick</code> queue first, then drains Promise microtasks. If a nextTick schedules a Promise, that Promise waits until nextTicks are exhausted. If a Promise schedules a nextTick, that nextTick runs before any further Promises.`,
+    steps: [
+      { action: 'schedule', queue: 'promise', label: 'promise 1', line: 1, detail: 'Schedule promise.then callback.' },
+      { action: 'schedule', queue: 'tick', label: 'tick 1', line: 6, detail: 'Schedule nextTick callback.' },
+      { action: 'exec', line: 11, log: 'sync', src: 'sync', detail: 'Synchronous console.log.' },
+      { action: 'drain-tick', line: 6, label: 'tick 1', log: 'tick 1', src: 'tick', detail: 'Drain nextTick queue first. Run tick 1.' },
+      { action: 'schedule', queue: 'promise', label: 'promise inside tick', line: 8, detail: 'tick 1 scheduled another Promise — joins Promise queue.' },
+      { action: 'drain-promise', line: 1, label: 'promise 1', log: 'promise 1', src: 'promise', detail: 'nextTick queue empty → start Promise queue. Run promise 1.' },
+      { action: 'schedule', queue: 'tick', label: 'tick inside promise', line: 3, detail: 'promise 1 scheduled a nextTick — STOP. Drain nextTick first.' },
+      { action: 'drain-tick', line: 3, label: 'tick inside promise', log: 'tick inside promise', src: 'tick', detail: 'nextTick queue gets priority — drain it before continuing with Promises.' },
+      { action: 'drain-promise', line: 8, label: 'promise inside tick', log: 'promise inside tick', src: 'promise', detail: 'Now back to Promises.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'All microtasks drained. Loop begins.' },
+      { action: 'enter-phase', phase: 'pending' },
+      { action: 'enter-phase', phase: 'poll' },
+      { action: 'enter-phase', phase: 'check' },
+      { action: 'enter-phase', phase: 'close' },
+      { action: 'done', detail: 'Order: sync → tick 1 → promise 1 → tick inside promise → promise inside tick.' },
+    ]
+  },
+
+  // ---------- 6. Timer + I/O Interaction ----------
+  {
+    title: "6. Timer fires while I/O is in flight",
+    desc: "setTimeout(100) + fs.readFile that takes ~95ms — the docs' worked example.",
+    source: [
+      `<span class="k">const</span> <span class="id">fs</span> <span class="op">=</span> <span class="fn">require</span>(<span class="s">'node:fs'</span>);`,
+      ``,
+      `<span class="k">const</span> <span class="id">start</span> <span class="op">=</span> <span class="id">Date</span>.<span class="fn">now</span>();`,
+      ``,
+      `<span class="fn">setTimeout</span>(() <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="id">Date</span>.<span class="fn">now</span>() <span class="op">-</span> <span class="id">start</span>, <span class="s">'ms elapsed'</span>);`,
+      `}, <span class="n">100</span>);`,
+      ``,
+      `<span class="id">fs</span>.<span class="fn">readFile</span>(<span class="s">'/file'</span>, () <span class="op">=&gt;</span> {`,
+      `  <span class="c">// takes 95ms to read, then this cb blocks 10ms</span>`,
+      `  <span class="k">while</span> (<span class="id">Date</span>.<span class="fn">now</span>() <span class="op">-</span> <span class="id">start</span> <span class="op">&lt;</span> <span class="n">105</span>) {}`,
+      `});`,
+    ],
+    notes: `<b>Why ~105ms instead of 100ms?</b> When the loop enters POLL at t=0ms with no queued callbacks but a timer scheduled for t=100ms, it BLOCKS in poll waiting for I/O — up to the timer threshold. The readFile completes at 95ms; its callback runs in POLL and blocks for 10ms. By the time poll finishes, the loop checks timers and the 100ms threshold is long past — but the actual delay is ~105ms.`,
+    steps: [
+      { action: 'exec', line: 3, src: 'sync', detail: 'start = Date.now()' },
+      { action: 'schedule', queue: 'timer', label: 'timeout (100ms)', line: 5, detail: 'Schedule timer for t=100ms.' },
+      { action: 'schedule', queue: 'io', label: 'readFile', line: 9, detail: 'Start async file read (~95ms).' },
+      { action: 'enter-phase', phase: 'timers', detail: 'TIMERS — not yet 100ms, nothing ready.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING — empty.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — queue empty, no setImmediate. Calculate block time = soonest timer (100ms).' },
+      { action: 'idle-poll-block', detail: 'Block waiting for I/O, up to 100ms. (t=0ms → 95ms: file read completes.)' },
+      { action: 'schedule-io-complete', label: 'readFile cb', detail: 'At t=95ms readFile fires → callback queued in poll.' },
+      { action: 'exec-queue', phase: 'poll', line: 9, label: 'readFile cb', detail: 'Execute readFile callback. It blocks the thread for 10ms (busy-wait).' },
+      { action: 'time-pass', detail: 'Time is now t=105ms.' },
+      { action: 'enter-phase', phase: 'check', detail: 'CHECK — empty.' },
+      { action: 'enter-phase', phase: 'close', detail: 'CLOSE — empty.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'Back to TIMERS. The 100ms threshold has passed (t=105ms ≥ 100ms).', iter: 2 },
+      { action: 'exec-queue', phase: 'timers', line: 5, label: 'timeout', log: '105 ms elapsed', src: 'timer', detail: 'Timer fires. Logged delay ≈ 105ms, not 100ms.' },
+      { action: 'done', detail: 'Lesson: setTimeout(fn, N) gives a MINIMUM delay, not an exact one.' },
+    ]
+  },
+
+  // ---------- 7. Close callback ----------
+  {
+    title: "7. Close callbacks phase",
+    desc: "socket.destroy() routes the 'close' event through the close phase.",
+    source: [
+      `<span class="k">const</span> <span class="id">net</span> <span class="op">=</span> <span class="fn">require</span>(<span class="s">'node:net'</span>);`,
+      ``,
+      `<span class="k">const</span> <span class="id">socket</span> <span class="op">=</span> <span class="k">new</span> <span class="id">net</span>.<span class="fn">Socket</span>();`,
+      `<span class="id">socket</span>.<span class="fn">on</span>(<span class="s">'close'</span>, () <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'socket closed'</span>));`,
+      ``,
+      `<span class="fn">setImmediate</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'immediate'</span>));`,
+      ``,
+      `<span class="id">socket</span>.<span class="fn">destroy</span>(); <span class="c">// abrupt close</span>`,
+    ],
+    notes: `<b>Close phase exists for abrupt closes</b> (<code>socket.destroy()</code>). Normal closes emit via <code>process.nextTick()</code>. Order in this example: setImmediate fires in CHECK, then close fires in CLOSE — both in the same loop iteration.`,
+    steps: [
+      { action: 'exec', line: 1, src: 'sync', detail: 'Require net.' },
+      { action: 'exec', line: 3, src: 'sync', detail: 'Create socket.' },
+      { action: 'exec', line: 4, src: 'sync', detail: 'Register close handler.' },
+      { action: 'schedule', queue: 'immediate', label: 'immediate cb', line: 6, detail: 'Schedule setImmediate.' },
+      { action: 'exec', line: 8, src: 'sync', detail: 'socket.destroy() — abrupt close.' },
+      { action: 'schedule', queue: 'close', label: 'close cb', detail: 'Abrupt close → close handler queued for CLOSE phase.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'TIMERS — empty.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING — empty.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — empty, immediate pending.' },
+      { action: 'idle-poll', detail: 'Skip to CHECK.' },
+      { action: 'enter-phase', phase: 'check', detail: 'CHECK phase.' },
+      { action: 'exec-queue', phase: 'check', line: 6, label: 'immediate cb', log: 'immediate', src: 'immediate', detail: 'setImmediate fires.' },
+      { action: 'enter-phase', phase: 'close', detail: 'CLOSE phase.' },
+      { action: 'exec-queue', phase: 'close', line: 4, label: 'close cb', log: 'socket closed', src: 'close', detail: 'Close handler fires.' },
+      { action: 'done', detail: 'Both events handled in one loop iteration.' },
+    ]
+  },
+
+  // ---------- 8. Nested scheduling — the big combo ----------
+  {
+    title: "8. The big combo — nested scheduling",
+    desc: "Timers scheduling nextTicks scheduling promises scheduling immediates...",
+    source: [
+      `<span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'A'</span>);`,
+      ``,
+      `<span class="fn">setTimeout</span>(() <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'B (timer)'</span>);`,
+      `  <span class="id">process</span>.<span class="fn">nextTick</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'C (tick in timer)'</span>));`,
+      `  <span class="id">Promise</span>.<span class="fn">resolve</span>().<span class="fn">then</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'D (promise in timer)'</span>));`,
+      `}, <span class="n">0</span>);`,
+      ``,
+      `<span class="fn">setImmediate</span>(() <span class="op">=&gt;</span> {`,
+      `  <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'E (immediate)'</span>);`,
+      `  <span class="id">process</span>.<span class="fn">nextTick</span>(() <span class="op">=&gt;</span> <span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'F (tick in immediate)'</span>));`,
+      `});`,
+      ``,
+      `<span class="fn">console</span>.<span class="fn">log</span>(<span class="s">'G'</span>);`,
+    ],
+    notes: `<b>The big idea:</b> microtasks (nextTick + Promise) drain between every callback in the loop — not just at the start. So after the timer callback runs, the loop pauses and drains tick + promise queues BEFORE entering the next phase.`,
+    steps: [
+      { action: 'exec', line: 1, log: 'A', src: 'sync', detail: 'Print A.' },
+      { action: 'schedule', queue: 'timer', label: 'timer cb', line: 3, detail: 'Schedule timer.' },
+      { action: 'schedule', queue: 'immediate', label: 'immediate cb', line: 9, detail: 'Schedule immediate.' },
+      { action: 'exec', line: 14, log: 'G', src: 'sync', detail: 'Print G.' },
+      { action: 'enter-phase', phase: 'timers', detail: 'TIMERS.' },
+      { action: 'exec-queue', phase: 'timers', line: 3, label: 'timer cb', log: 'B (timer)', src: 'timer', detail: 'Run timer callback.' },
+      { action: 'schedule', queue: 'tick', label: 'C', line: 5, detail: 'Inside timer: schedule nextTick.' },
+      { action: 'schedule', queue: 'promise', label: 'D', line: 6, detail: 'Inside timer: schedule promise.' },
+      { action: 'drain-tick', line: 5, label: 'C', log: 'C (tick in timer)', src: 'tick', detail: 'Callback finished → drain microtasks BEFORE next phase. nextTick first.' },
+      { action: 'drain-promise', line: 6, label: 'D', log: 'D (promise in timer)', src: 'promise', detail: 'Then Promise microtasks.' },
+      { action: 'enter-phase', phase: 'pending', detail: 'PENDING — empty.' },
+      { action: 'enter-phase', phase: 'poll', detail: 'POLL — empty, immediate pending.' },
+      { action: 'idle-poll', detail: 'Skip to CHECK.' },
+      { action: 'enter-phase', phase: 'check', detail: 'CHECK phase.' },
+      { action: 'exec-queue', phase: 'check', line: 9, label: 'immediate cb', log: 'E (immediate)', src: 'immediate', detail: 'Run immediate callback.' },
+      { action: 'schedule', queue: 'tick', label: 'F', line: 11, detail: 'Inside immediate: schedule nextTick.' },
+      { action: 'drain-tick', line: 11, label: 'F', log: 'F (tick in immediate)', src: 'tick', detail: 'Drain nextTick before continuing.' },
+      { action: 'enter-phase', phase: 'close', detail: 'CLOSE — empty.' },
+      { action: 'done', detail: 'Final order: A → G → B → C → D → E → F.' },
+    ]
+  },
+];
+
+// ============================================================================
+// STATE
+// ============================================================================
+let currentExample = 0;
+let currentStep = -1; // -1 = before first step (initial state)
+let snapshots = []; // snapshot of state after each step, for prev/next
+let playing = false;
+let playInterval = null;
+
+// Queue state — arrays of {label}
+let queues = {
+  timers: [], pending: [], poll: [], check: [], close: [],
+  tick: [], promise: [], io: [] // io is "in flight", not a phase queue
+};
+let activePhase = null;
+let consoleLines = []; // {n, log, src}
+let loopIter = 0;
+
+// ============================================================================
+// RENDERING
+// ============================================================================
+const el = (id) => document.getElementById(id);
+
+function renderExamplesList() {
+  const list = el('examplesList');
+  list.innerHTML = examples.map((e, i) => `
+    <div class="ex ${i === currentExample ? 'active' : ''}" data-i="${i}">
+      <div><span class="num">${String(i + 1).padStart(2, '0')}</span>${e.title.replace(/^\d+\.\s*/, '')}</div>
+      <div class="desc">${e.desc}</div>
+    </div>
+  `).join('');
+  list.querySelectorAll('.ex').forEach(div => {
+    div.addEventListener('click', () => {
+      currentExample = parseInt(div.dataset.i);
+      reset();
+      renderExamplesList();
+      renderAll();
+    });
+  });
+  el('exCount').textContent = `${examples.length} scenarios`;
+}
+
+function renderSource() {
+  const ex = examples[currentExample];
+  el('sourceTitle').textContent = `example_${currentExample + 1}.js`;
+  el('code').innerHTML = ex.source.map((line, i) =>
+    `<span class="ln" data-line="${i + 1}"><span class="lnum">${i + 1}</span>${line || ' '}</span>`
+  ).join('\n');
+  el('notes').innerHTML = ex.notes;
+}
+
+function renderQueues() {
+  // Phase counts inside SVG
+  const setCount = (id, n) => {
+    const node = el(id);
+    if (!node) return;
+    node.textContent = n === 0 ? '0 queued' : `${n} queued`;
+    node.classList.toggle('has', n > 0);
+  };
+  setCount('count-timers', queues.timers.length);
+  setCount('count-pending', queues.pending.length);
+  setCount('count-poll', queues.poll.length);
+  setCount('count-check', queues.check.length);
+  setCount('count-close', queues.close.length);
+
+  // Phase highlight
+  ['timers', 'pending', 'poll', 'check', 'close'].forEach(p => {
+    const g = el('phase-' + p);
+    if (!g) return;
+    const circle = g.querySelector('.phase-circle');
+    const labels = g.querySelectorAll('.phase-label');
+    if (activePhase === p) {
+      circle.classList.add('active');
+      labels.forEach(l => l.classList.add('active'));
+    } else {
+      circle.classList.remove('active');
+      labels.forEach(l => l.classList.remove('active'));
+    }
+  });
+
+  // Queue items inside SVG near each phase
+  const queuePositions = {
+    timers:  { x: 300, y: 165, anchor: 'middle' },
+    pending: { x: 490, y: 280, anchor: 'middle' },
+    poll:    { x: 490, y: 480, anchor: 'middle' },
+    check:   { x: 300, y: 580, anchor: 'middle' },
+    close:   { x: 110, y: 480, anchor: 'middle' },
+  };
+  for (const phase of ['timers', 'pending', 'poll', 'check', 'close']) {
+    const g = el('queue-' + phase);
+    if (!g) continue;
+    g.innerHTML = '';
+    const items = queues[phase];
+    const pos = queuePositions[phase];
+    items.slice(0, 3).forEach((item, i) => {
+      const yOff = i * 14;
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', pos.x);
+      text.setAttribute('y', pos.y + yOff);
+      text.setAttribute('text-anchor', pos.anchor);
+      text.setAttribute('font-family', 'JetBrains Mono, monospace');
+      text.setAttribute('font-size', '10');
+      text.setAttribute('fill', getPhaseColor(phase));
+      text.textContent = `▸ ${item.label}`;
+      g.appendChild(text);
+    });
+    if (items.length > 3) {
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', pos.x);
+      text.setAttribute('y', pos.y + 3 * 14);
+      text.setAttribute('text-anchor', pos.anchor);
+      text.setAttribute('font-family', 'JetBrains Mono, monospace');
+      text.setAttribute('font-size', '10');
+      text.setAttribute('fill', 'var(--ink-3)');
+      text.textContent = `+${items.length - 3} more`;
+      g.appendChild(text);
+    }
+  }
+
+  // Microtask queues
+  renderMicro('tick', queues.tick);
+  renderMicro('promise', queues.promise);
+}
+
+function getPhaseColor(phase) {
+  return {
+    timers: '#74c0fc', pending: '#aeb3c0', poll: '#66d9d4',
+    check: '#8ce99a', close: '#ff8787'
+  }[phase] || '#aeb3c0';
+}
+
+function renderMicro(kind, items) {
+  const itemsEl = el(kind + '-items');
+  const countEl = el(kind + '-count');
+  const wrap = el('micro-' + kind);
+  itemsEl.innerHTML = items.map(it => `<span class="item ${kind}">${it.label}</span>`).join('');
+  countEl.textContent = items.length === 0 ? 'empty' : `${items.length} pending`;
+  wrap.classList.toggle('active', items.length > 0);
+}
+
+function renderConsole() {
+  const c = el('console');
+  if (consoleLines.length === 0) {
+    c.innerHTML = `<div style="color: var(--ink-3); font-style: italic;">// console.log() output will appear here in execution order</div>`;
+  } else {
+    c.innerHTML = consoleLines.map((line, i) => `
+      <div class="out">
+        <span class="ord">${String(i + 1).padStart(2, '0')}</span>
+        <span class="src ${line.src}">${line.src}</span>
+        ${escapeHtml(line.log)}
+      </div>
+    `).join('');
+  }
+  el('outCount').textContent = consoleLines.length;
+  c.scrollTop = c.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderCodeHighlight(stepLine, scheduledLine, scheduledQueue) {
+  document.querySelectorAll('.code .ln').forEach(ln => {
+    ln.classList.remove('exec', 'scheduled-tick', 'scheduled-promise', 'scheduled-timer', 'scheduled-immediate', 'scheduled-io');
+  });
+  if (stepLine) {
+    const node = document.querySelector(`.code .ln[data-line="${stepLine}"]`);
+    if (node) {
+      node.classList.add('exec');
+      scrollLineIntoView(node);
+    }
+  }
+  if (scheduledLine && scheduledQueue) {
+    const node = document.querySelector(`.code .ln[data-line="${scheduledLine}"]`);
+    if (node) {
+      node.classList.add('scheduled-' + scheduledQueue);
+      if (!stepLine) scrollLineIntoView(node);
+    }
+  }
+  updateLineIndicator(stepLine, scheduledLine, scheduledQueue);
+}
+
+// Scroll only the code panel (not the whole page) so the active line is centered
+function scrollLineIntoView(lineNode) {
+  const container = el('code');
+  if (!container || !lineNode) return;
+  const cRect = container.getBoundingClientRect();
+  const lRect = lineNode.getBoundingClientRect();
+  const offset = (lRect.top - cRect.top) - (cRect.height / 2) + (lRect.height / 2);
+  container.scrollBy({ top: offset, behavior: 'smooth' });
+}
+
+// Updates the line pill in the Current Step card with the line number + actual code text
+function updateLineIndicator(stepLine, scheduledLine, scheduledQueue) {
+  const indicator = el('lineIndicator');
+  const pill = el('linePill');
+  const codeEl = el('lineCode');
+  const lineNum = stepLine || scheduledLine;
+
+  // Get the current step for fallback context
+  const ex = examples[currentExample];
+  const curStep = currentStep >= 0 ? ex.steps[currentStep] : null;
+
+  if (!lineNum) {
+    // No source line to point at — show what kind of operation is happening
+    if (!curStep) {
+      indicator.style.display = 'none';
+      return;
+    }
+    indicator.style.display = 'flex';
+    pill.classList.remove('scheduled');
+    let pillText = '—';
+    let codeText = '';
+    switch (curStep.action) {
+      case 'enter-phase':
+        pillText = `phase`;
+        codeText = `→ ${curStep.phase.toUpperCase()}`;
+        break;
+      case 'exec-queue':
+        pillText = `cb in ${curStep.phase}`;
+        codeText = `▶ executing: ${curStep.label || 'callback'}`;
+        break;
+      case 'drain-tick':
+        pillText = `nextTick`;
+        codeText = `▶ running: ${curStep.label || 'tick callback'}`;
+        break;
+      case 'drain-promise':
+        pillText = `promise`;
+        codeText = `▶ running: ${curStep.label || 'then callback'}`;
+        break;
+      case 'schedule-io-complete':
+        pillText = `i/o done`;
+        codeText = `✓ ${curStep.label || 'callback'} queued in POLL`;
+        break;
+      case 'idle-poll':
+        pillText = `poll`;
+        codeText = `⤵ skipping to CHECK (setImmediate pending)`;
+        break;
+      case 'idle-poll-block':
+        pillText = `poll`;
+        codeText = `⏸ blocking until I/O or timer`;
+        break;
+      case 'time-pass':
+        pillText = `time`;
+        codeText = `⏱ clock advances`;
+        break;
+      case 'done':
+        pillText = `exit`;
+        codeText = `◼ process exits`;
+        break;
+      default:
+        indicator.style.display = 'none';
+        return;
+    }
+    pill.textContent = pillText;
+    codeEl.textContent = codeText;
+    codeEl.title = codeText;
+    return;
+  }
+
+  // We have a line number from the source
+  indicator.style.display = 'flex';
+  const raw = ex.source[lineNum - 1] || '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = raw;
+  const text = tmp.textContent.trim() || '(blank)';
+  if (stepLine) {
+    pill.textContent = `line ${stepLine}`;
+    pill.classList.remove('scheduled');
+  } else {
+    pill.textContent = `line ${scheduledLine} → ${scheduledQueue}`;
+    pill.classList.add('scheduled');
+  }
+  codeEl.textContent = text;
+  codeEl.title = text;
+}
+
+function renderStepInfo(step) {
+  if (!step) {
+    el('phaseTitle').textContent = 'Ready';
+    el('phaseDetail').textContent = 'Pick an example and press Step to begin.';
+    return;
+  }
+  let title;
+  switch (step.action) {
+    case 'exec': title = '⌁ Synchronous execution'; break;
+    case 'schedule': title = `+ Schedule → ${step.queue} queue`; break;
+    case 'schedule-io-complete': title = '✓ I/O completed'; break;
+    case 'drain-tick': title = '◂ Draining nextTick'; break;
+    case 'drain-promise': title = '◂ Draining Promise microtask'; break;
+    case 'enter-phase': title = `▶ Enter ${step.phase.toUpperCase()} phase`; break;
+    case 'exec-queue': title = `⌁ Execute in ${step.phase.toUpperCase()}`; break;
+    case 'idle-poll': title = '⤵ POLL — skip to CHECK'; break;
+    case 'idle-poll-block': title = '⏸ POLL — block waiting'; break;
+    case 'time-pass': title = '⏱ Time passes'; break;
+    case 'done': title = '◼ Process exits'; break;
+    default: title = step.action;
+  }
+  el('phaseTitle').textContent = title;
+  el('phaseDetail').textContent = step.detail || '';
+}
+
+function renderLoopIter() {
+  el('loopIter').textContent = `iteration ${loopIter}`;
+}
+
+function renderAll() {
+  renderSource();
+  renderQueues();
+  renderConsole();
+  renderLoopIter();
+  const ex = examples[currentExample];
+  el('stepTotal').textContent = ex.steps.length;
+  el('stepNum').textContent = Math.max(0, currentStep + 1);
+  el('btnPrev').disabled = currentStep < 0;
+  el('btnStep').disabled = currentStep >= ex.steps.length - 1;
+  if (currentStep >= 0 && currentStep < ex.steps.length) {
+    renderStepInfo(ex.steps[currentStep]);
+  } else {
+    renderStepInfo(null);
+  }
+}
+
+// ============================================================================
+// STATE TRANSITIONS — applying a step
+// ============================================================================
+function applyStep(step, opts = {}) {
+  const { showToasts = true } = opts;
+  // execute line highlighting
+  let scheduledLine = null, scheduledQueue = null;
+  switch (step.action) {
+    case 'exec':
+      if (step.log) consoleLines.push({ log: step.log, src: step.src || 'sync' });
+      renderCodeHighlight(step.line);
+      break;
+    case 'schedule':
+      queues[step.queue].push({ label: step.label });
+      renderCodeHighlight(null, step.line, step.queue);
+      break;
+    case 'schedule-io-complete':
+      queues.poll.push({ label: step.label });
+      // remove "in flight" io marker - we don't visualize this directly
+      renderCodeHighlight();
+      if (showToasts) toast('t-enter', 'I/O COMPLETED', `Kernel notified Node.js → callback added to POLL queue.`, '✓');
+      break;
+    case 'drain-tick':
+      // remove one from front
+      queues.tick.shift();
+      if (step.log) consoleLines.push({ log: step.log, src: step.src || 'tick' });
+      renderCodeHighlight(step.line);
+      if (showToasts && !drainTickToastShown) {
+        toast('t-tick', 'DRAINING nextTick QUEUE', 'Microtasks always drain before the loop advances. nextTick first, Promise second.', '▸');
+        drainTickToastShown = true;
+      }
+      break;
+    case 'drain-promise':
+      queues.promise.shift();
+      if (step.log) consoleLines.push({ log: step.log, src: step.src || 'promise' });
+      renderCodeHighlight(step.line);
+      if (showToasts && !drainPromiseToastShown) {
+        toast('t-promise', 'DRAINING Promise QUEUE', 'nextTick queue is empty → now drain Promise microtasks.', '▸');
+        drainPromiseToastShown = true;
+      }
+      break;
+    case 'enter-phase':
+      // Phase transition: emit "leaving" for previous, "entering" for new
+      if (showToasts) {
+        if (activePhase && activePhase !== step.phase) {
+          toast('t-exit', `LEAVING ${activePhase.toUpperCase()}`, phaseExitMsg(activePhase), '◂');
+        }
+        toast('t-enter', `ENTERING ${step.phase.toUpperCase()}`, phaseEnterMsg(step.phase, queues[step.phase].length), '▶');
+      }
+      activePhase = step.phase;
+      if (step.iter) loopIter = step.iter;
+      else if (loopIter === 0) loopIter = 1;
+      // reset drain toast flags when entering a new phase (so they show again later)
+      drainTickToastShown = false;
+      drainPromiseToastShown = false;
+      renderCodeHighlight();
+      break;
+    case 'exec-queue':
+      // pull one from the phase queue
+      if (queues[step.phase].length) queues[step.phase].shift();
+      if (step.log) consoleLines.push({ log: step.log, src: step.src });
+      renderCodeHighlight(step.line);
+      break;
+    case 'idle-poll':
+      if (showToasts) toast('t-enter', 'POLL → IDLE → CHECK', 'Poll queue is empty and setImmediate is scheduled → skip directly to CHECK.', '⤵');
+      renderCodeHighlight();
+      break;
+    case 'idle-poll-block':
+      if (showToasts) toast('t-enter', 'POLL — BLOCKING', 'No setImmediate scheduled. Block here waiting for I/O, up to the soonest timer threshold.', '⏸');
+      renderCodeHighlight();
+      break;
+    case 'time-pass':
+      renderCodeHighlight();
+      break;
+    case 'done':
+      if (showToasts) {
+        if (activePhase) {
+          toast('t-exit', `LEAVING ${activePhase.toUpperCase()}`, phaseExitMsg(activePhase), '◂');
+        }
+        toast('t-done', 'PROCESS EXIT', 'Nothing left scheduled. Node.js shuts down the event loop cleanly.', '◼');
+      }
+      activePhase = null;
+      renderCodeHighlight();
+      break;
+  }
+}
+
+// Toast/popup messages per phase
+function phaseEnterMsg(phase, qCount) {
+  const msgs = {
+    timers: `Run callbacks scheduled by setTimeout / setInterval whose threshold has been reached. ${qCount} ready.`,
+    pending: `Execute I/O callbacks deferred from a previous iteration (e.g. some TCP errors). ${qCount} queued.`,
+    poll: `Two jobs: process I/O callbacks in the queue, and (if empty) decide whether to block, skip, or wrap back.`,
+    check: `Fire all setImmediate callbacks. Runs right after poll. ${qCount} queued.`,
+    close: `Emit 'close' events from abrupt closes (socket.destroy etc.). ${qCount} queued.`,
+  };
+  return msgs[phase] || '';
+}
+function phaseExitMsg(phase) {
+  const msgs = {
+    timers: 'All due timers processed → moving to pending callbacks.',
+    pending: 'Pending callbacks done → moving to poll.',
+    poll: 'Poll work complete → moving to check.',
+    check: 'setImmediate callbacks done → moving to close.',
+    close: 'Close events emitted → loop iteration complete, back to timers.',
+  };
+  return msgs[phase] || '';
+}
+
+// Toast helpers (with queue + dedupe + auto-dismiss)
+let drainTickToastShown = false;
+let drainPromiseToastShown = false;
+let toastIdCounter = 0;
+let toastsEnabled = true;
+let toastAutoDismissMs = 2600;
+
+function toast(variant, title, detail, icon) {
+  if (!toastsEnabled) return;
+  const stack = el('toastStack');
+  if (!stack) return;
+  // Cap the stack: if 4+ toasts present, immediately remove the oldest
+  while (stack.children.length >= 4) {
+    stack.removeChild(stack.firstChild);
+  }
+  const id = ++toastIdCounter;
+  const div = document.createElement('div');
+  div.className = `toast ${variant}`;
+  div.dataset.id = id;
+  div.innerHTML = `
+    <div class="ttl"><span class="ico">${icon || '●'}</span>${escapeHtml(title)}</div>
+    <div class="dtl">${escapeHtml(detail)}</div>
+  `;
+  stack.appendChild(div);
+  // Auto-dismiss
+  setTimeout(() => {
+    if (!div.parentNode) return;
+    div.classList.add('leaving');
+    setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 300);
+  }, toastAutoDismissMs);
+}
+function clearToasts() {
+  const stack = el('toastStack');
+  if (stack) stack.innerHTML = '';
+}
+
+function snapshot() {
+  return {
+    queues: JSON.parse(JSON.stringify(queues)),
+    activePhase, loopIter,
+    consoleLines: JSON.parse(JSON.stringify(consoleLines)),
+  };
+}
+function restore(s) {
+  queues = JSON.parse(JSON.stringify(s.queues));
+  activePhase = s.activePhase;
+  loopIter = s.loopIter;
+  consoleLines = JSON.parse(JSON.stringify(s.consoleLines));
+}
+
+function step(opts = {}) {
+  const ex = examples[currentExample];
+  if (currentStep >= ex.steps.length - 1) return;
+  currentStep++;
+  // Snapshot before applying so we can step back
+  // (We snapshot AFTER application; prev rebuilds from snapshots[currentStep-1])
+  applyStep(ex.steps[currentStep], opts);
+  snapshots[currentStep] = snapshot();
+  renderAll();
+}
+function stepBack() {
+  if (currentStep < 0) return;
+  currentStep--;
+  if (currentStep < 0) {
+    resetState();
+  } else {
+    restore(snapshots[currentStep]);
+  }
+  // Clear any visible toasts on rewind — we don't replay them
+  clearToasts();
+  renderAll();
+}
+function resetState() {
+  queues = { timers: [], pending: [], poll: [], check: [], close: [], tick: [], promise: [], io: [] };
+  activePhase = null;
+  consoleLines = [];
+  loopIter = 0;
+  drainTickToastShown = false;
+  drainPromiseToastShown = false;
+}
+function reset() {
+  currentStep = -1;
+  snapshots = [];
+  resetState();
+  if (playing) togglePlay();
+  if (runAllActive) stopRunAll();
+  clearToasts();
+  renderAll();
+}
+
+function togglePlay() {
+  playing = !playing;
+  el('btnPlay').textContent = playing ? '⏸' : '▶';
+  if (playing) {
+    const speed = parseInt(el('speed').value);
+    if (speed === 0) { playing = false; el('btnPlay').textContent = '▶'; return; }
+    const interval = Math.max(100, 2200 - speed * 20);
+    playInterval = setInterval(() => {
+      const ex = examples[currentExample];
+      if (currentStep >= ex.steps.length - 1) {
+        togglePlay();
+        return;
+      }
+      step();
+    }, interval);
+  } else {
+    if (playInterval) clearInterval(playInterval);
+    playInterval = null;
+  }
+}
+
+// =====================================================================
+// RUN ALL — restart from the beginning and play through at fixed pace
+// =====================================================================
+let runAllActive = false;
+let runAllInterval = null;
+
+function startRunAll() {
+  // Stop any other play modes
+  if (playing) {
+    if (playInterval) clearInterval(playInterval);
+    playing = false;
+    playInterval = null;
+    el('btnPlay').textContent = '▶';
+  }
+  // Reset to beginning (without recursively stopping ourselves)
+  currentStep = -1;
+  snapshots = [];
+  resetState();
+  clearToasts();
+  renderAll();
+
+  runAllActive = true;
+  const btn = el('btnRunAll');
+  btn.classList.add('running');
+  btn.innerHTML = '<span class="pulse"></span>RUNNING  ◼ STOP';
+
+  // Pace: scale with speed slider, but slower default so toasts are readable
+  const speed = parseInt(el('speed').value);
+  const interval = Math.max(800, 2600 - speed * 18);
+
+  runAllInterval = setInterval(() => {
+    const ex = examples[currentExample];
+    if (currentStep >= ex.steps.length - 1) {
+      stopRunAll();
+      return;
+    }
+    step();
+  }, interval);
+}
+
+function stopRunAll() {
+  runAllActive = false;
+  if (runAllInterval) clearInterval(runAllInterval);
+  runAllInterval = null;
+  const btn = el('btnRunAll');
+  btn.classList.remove('running');
+  btn.innerHTML = '▶▶  RUN ALL';
+}
+
+function toggleRunAll() {
+  if (runAllActive) stopRunAll();
+  else startRunAll();
+}
+
+// ============================================================================
+// INIT
+// ============================================================================
+el('btnStep').addEventListener('click', step);
+el('btnPrev').addEventListener('click', stepBack);
+el('btnReset').addEventListener('click', reset);
+el('btnPlay').addEventListener('click', togglePlay);
+el('btnRunAll').addEventListener('click', toggleRunAll);
+el('toastToggle').addEventListener('change', (e) => {
+  toastsEnabled = e.target.checked;
+  if (!toastsEnabled) clearToasts();
+});
+el('speed').addEventListener('input', (e) => {
+  const v = parseInt(e.target.value);
+  el('speedLabel').textContent = v === 0 ? 'off' : v < 30 ? 'slow' : v < 70 ? 'medium' : 'fast';
+  // If run-all is active, restart with new pacing
+  if (runAllActive) {
+    if (runAllInterval) clearInterval(runAllInterval);
+    const speed = parseInt(el('speed').value);
+    const interval = Math.max(800, 2600 - speed * 18);
+    runAllInterval = setInterval(() => {
+      const ex = examples[currentExample];
+      if (currentStep >= ex.steps.length - 1) {
+        stopRunAll();
+        return;
+      }
+      step();
+    }, interval);
+  }
+  if (playing) {
+    if (playInterval) clearInterval(playInterval);
+    playing = false;
+    togglePlay();
+  }
+});
+
+// keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); step(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); stepBack(); }
+  if (e.key === 'r' || e.key === 'R') reset();
+});
+
+renderExamplesList();
+renderAll();
+</script>
+
+</body>
+</html>
